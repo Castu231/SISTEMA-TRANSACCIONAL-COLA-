@@ -1,20 +1,22 @@
 # Sistema Transaccional de Colas - Tanqueada de Automoviles
 
-Aplicacion web en Python y SQLite para simular la atencion de vehiculos en una estacion de servicio. El sistema registra la llegada de automoviles, los agrega a una cola, asigna bombas disponibles y calcula tiempos de espera y servicio para cada transaccion.
+Aplicacion web en Python y SQLite para simular la atencion de vehiculos en una estacion de servicio. El sistema registra la llegada de automoviles, los agrega a una cola, asigna bombas disponibles y calcula tiempos de espera, servicio y costo total para cada transaccion.
 
 ## Caracteristicas
 
-- Registro de vehiculos con placa, capacidad, nivel actual y cantidad solicitada.
+- Registro de vehiculos con placa, capacidad, nivel actual y cantidad solicitada en galones.
+- Seleccion de combustible entre `Corriente` y `Extra`.
 - Cola de espera con estados `esperando`, `en servicio` y `finalizado`.
 - Varias bombas de gasolina funcionando como servidores del sistema.
+- Consulta de precios actualizados por galon desde una fuente en linea de Colombia.
 - Calculo automatico del tiempo de servicio con la formula:
 
 ```text
-tiempo de servicio = litros solicitados / velocidad de la bomba
+tiempo de servicio = (galones solicitados x 3.78541) / velocidad de la bomba
 ```
 
 - Historial completo de transacciones.
-- Interfaz web con actualizacion automatica cada 5 segundos.
+- API interna para consultar precios: `/api/precios-combustible`
 
 ## Modelo de Base de Datos
 
@@ -34,7 +36,11 @@ tiempo de servicio = litros solicitados / velocidad de la bomba
 | `id_cola` | INTEGER | Identificador del turno |
 | `id_vehiculo` | INTEGER | Relacion con el vehiculo |
 | `hora_llegada` | TEXT | Fecha y hora de llegada |
-| `cantidad_solicitada` | REAL | Litros requeridos en la solicitud |
+| `cantidad_solicitada` | REAL | Campo legado compatible |
+| `galones_solicitados` | REAL | Galones requeridos |
+| `tipo_combustible` | TEXT | `Corriente` o `Extra` |
+| `precio_galon` | REAL | Precio tomado al crear la solicitud |
+| `costo_estimado` | REAL | Valor esperado de la tanqueada |
 | `estado` | TEXT | `esperando`, `en servicio`, `finalizado` |
 
 ### Tabla `bombas`
@@ -52,24 +58,41 @@ tiempo de servicio = litros solicitados / velocidad de la bomba
 | `id_transaccion` | INTEGER | Identificador del evento |
 | `id_vehiculo` | INTEGER | Vehiculo atendido |
 | `id_bomba` | INTEGER | Bomba asignada |
-| `litros_suministrados` | REAL | Cantidad servida |
+| `litros_suministrados` | REAL | Cantidad servida convertida a litros |
+| `galones_suministrados` | REAL | Cantidad servida en galones |
+| `combustible` | TEXT | Tipo de gasolina |
+| `precio_galon` | REAL | Precio aplicado por galon |
+| `costo_total` | REAL | Valor total cobrado |
+| `fuente_precio` | TEXT | URL de consulta del precio |
+| `fecha_precio` | TEXT | Momento de consulta del precio |
 | `hora_inicio` | TEXT | Inicio del tanqueo |
 | `hora_fin` | TEXT | Fin del tanqueo |
 | `tiempo_espera` | INTEGER | Espera en segundos |
 
+### Tabla `precios_combustible`
+
+| Campo | Tipo | Descripcion |
+|---|---|---|
+| `tipo_combustible` | TEXT | `Corriente` o `Extra` |
+| `precio_galon` | REAL | Precio actual por galon |
+| `fuente` | TEXT | Origen del dato |
+| `actualizado_en` | TEXT | Fecha y hora de cache |
+
 ## Algoritmo del Sistema
 
-1. Llega un vehiculo y se valida que la cantidad solicitada no supere el espacio disponible.
+1. Llega un vehiculo y se valida que la cantidad solicitada en galones no supere el espacio disponible.
 2. El vehiculo se registra o actualiza en la tabla `vehiculos`.
-3. Se agrega un nuevo turno a la tabla `cola`.
-4. El sistema sincroniza estados:
+3. El sistema consulta el precio actual del combustible seleccionado.
+4. Se agrega un nuevo turno a la tabla `cola`.
+5. El sistema sincroniza estados:
    - Marca transacciones terminadas.
    - Libera bombas disponibles.
    - Toma los vehiculos en espera por orden FIFO.
    - Asigna una bomba libre.
-   - Calcula tiempo de espera y tiempo de servicio.
+   - Convierte galones a litros para calcular el tiempo de servicio.
+   - Calcula el costo total de la transaccion.
    - Crea la transaccion.
-5. La interfaz muestra cola, bombas y transacciones en tiempo real.
+6. La interfaz muestra cola, bombas, precios y transacciones.
 
 ## Ejecucion
 
@@ -119,8 +142,10 @@ Actualmente el proyecto usa SQLite con `gasolinera.db`. Esto funciona bien para 
 ## Configuracion inicial de la simulacion
 
 - Se crean 3 bombas automaticamente.
+- Se crean 5 bombas automaticamente.
 - Cada bomba arranca con velocidad `0.5` litros por segundo.
 - Esa velocidad equivale a `1 litro cada 2 segundos`, igual al ejemplo del enunciado.
+- Los precios se consultan desde `https://petroilsa.com/precios/` y se cachean localmente.
 
 ## Criterios cubiertos
 

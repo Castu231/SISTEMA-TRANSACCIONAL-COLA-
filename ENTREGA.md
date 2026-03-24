@@ -13,6 +13,8 @@ El proyecto permite:
 - Asignar automaticamente una bomba disponible.
 - Calcular el tiempo de espera.
 - Calcular el tiempo de servicio segun la cantidad solicitada.
+- Escoger entre gasolina `Corriente` y `Extra`.
+- Calcular el costo total de la tanqueada segun el precio actualizado por galon.
 - Mostrar el historial de transacciones.
 
 ## Componentes entregados
@@ -30,22 +32,24 @@ La simulacion usa una cola FIFO. Cuando llega un vehiculo:
 
 1. Se valida la informacion del tanque.
 2. Se registra el vehiculo.
-3. Se crea un turno en la tabla `cola`.
-4. El sistema revisa si existe una bomba libre.
-5. Si hay una bomba libre, crea la transaccion y cambia el estado a `en servicio`.
-6. Si no hay bomba libre, el vehiculo permanece `esperando`.
-7. Cuando el tiempo de servicio termina, la bomba se libera y el turno pasa a `finalizado`.
+3. Se consulta el precio actual del combustible elegido.
+4. Se crea un turno en la tabla `cola`.
+5. El sistema revisa si existe una bomba libre.
+6. Si hay una bomba libre, crea la transaccion y cambia el estado a `en servicio`.
+7. Si no hay bomba libre, el vehiculo permanece `esperando`.
+8. Cuando el tiempo de servicio termina, la bomba se libera y el turno pasa a `finalizado`.
 
 ## Formula utilizada
 
 ```text
-Tiempo de servicio = litros solicitados / velocidad de la bomba
+Tiempo de servicio = (galones solicitados x 3.78541) / velocidad de la bomba
 ```
 
 Ejemplo del sistema:
 
 ```text
-20 litros / 0.5 litros por segundo = 40 segundos
+10 galones x 3.78541 = 37.8541 litros
+37.8541 / 0.5 = 75.7 segundos
 ```
 
 ## Estructura del proyecto
@@ -53,6 +57,7 @@ Ejemplo del sistema:
 - `app.py`: controlador principal y rutas web.
 - `database.py`: conexion, creacion e inicializacion de la base de datos.
 - `schema.sql`: script del modelo de base de datos.
+- `fuel_prices.py`: servicio de consulta y cache de precios.
 - `templates/index.html`: interfaz HTML.
 - `static/styles.css`: estilos visuales.
 - `README.md`: instrucciones de uso.

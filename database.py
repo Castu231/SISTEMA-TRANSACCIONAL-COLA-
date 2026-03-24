@@ -16,6 +16,17 @@ def get_connection() -> sqlite3.Connection:
     return connection
 
 
+def ensure_column(connection: sqlite3.Connection, table_name: str, column_name: str, definition: str) -> None:
+    columns = {
+        row["name"]
+        for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if column_name not in columns:
+        connection.execute(
+            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"
+        )
+
+
 def init_db() -> None:
     with get_connection() as connection:
         connection.executescript(
@@ -55,6 +66,40 @@ def init_db() -> None:
                 FOREIGN KEY (id_vehiculo) REFERENCES vehiculos(id_vehiculo),
                 FOREIGN KEY (id_bomba) REFERENCES bombas(id_bomba)
             );
+
+            CREATE TABLE IF NOT EXISTS precios_combustible (
+                tipo_combustible TEXT PRIMARY KEY,
+                precio_galon REAL NOT NULL,
+                fuente TEXT NOT NULL,
+                actualizado_en TEXT NOT NULL
+            );
+            """
+        )
+
+        ensure_column(connection, "cola", "tipo_combustible", "TEXT DEFAULT 'Corriente'")
+        ensure_column(connection, "cola", "galones_solicitados", "REAL DEFAULT 0")
+        ensure_column(connection, "cola", "precio_galon", "REAL DEFAULT 0")
+        ensure_column(connection, "cola", "costo_estimado", "REAL DEFAULT 0")
+
+        ensure_column(connection, "transacciones", "combustible", "TEXT DEFAULT 'Corriente'")
+        ensure_column(connection, "transacciones", "galones_suministrados", "REAL DEFAULT 0")
+        ensure_column(connection, "transacciones", "precio_galon", "REAL DEFAULT 0")
+        ensure_column(connection, "transacciones", "costo_total", "REAL DEFAULT 0")
+        ensure_column(connection, "transacciones", "fuente_precio", "TEXT DEFAULT ''")
+        ensure_column(connection, "transacciones", "fecha_precio", "TEXT DEFAULT ''")
+
+        connection.execute(
+            """
+            UPDATE cola
+            SET galones_solicitados = cantidad_solicitada
+            WHERE galones_solicitados = 0 AND cantidad_solicitada > 0
+            """
+        )
+        connection.execute(
+            """
+            UPDATE transacciones
+            SET galones_suministrados = litros_suministrados / 3.78541
+            WHERE galones_suministrados = 0 AND litros_suministrados > 0
             """
         )
 
@@ -81,6 +126,7 @@ def reset_db() -> None:
             DELETE FROM cola;
             DELETE FROM vehiculos;
             DELETE FROM bombas;
+            DELETE FROM precios_combustible;
             """
         )
     init_db()
