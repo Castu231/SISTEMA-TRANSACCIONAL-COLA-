@@ -3,18 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema Transaccional de Colas</title>
+    <title>Sistema transaccional de colas</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
     <div class="page-shell">
         <header class="hero">
             <div>
-                <p class="eyebrow">Simulación de estación de servicio</p>
-                <h1>Sistema transaccional de colas para tanqueada de automóviles</h1>
+                <p class="eyebrow">Simulacion de estacion de servicio</p>
+                <h1>Sistema transaccional para tanqueo con gasolina corriente y extra</h1>
                 <p class="subtitle">
-                    Controla la llegada de vehículos, su paso por la cola, la asignación a bombas
-                    y el registro de cada transacción con tiempos de espera y servicio.
+                    El sistema administra la cola de vehiculos, asigna bombas disponibles,
+                    calcula tiempos de espera y servicio, y liquida el costo segun el
+                    precio actual del combustible por galon.
                 </p>
             </div>
             <div class="hero-meta">
@@ -24,7 +25,7 @@
                     <button type="submit">Actualizar vista</button>
                 </form>
                 <form action="{{ url_for('restart') }}" method="post">
-                    <button type="submit" class="secondary">Reiniciar simulación</button>
+                    <button type="submit" class="secondary">Reiniciar simulacion</button>
                 </form>
             </div>
         </header>
@@ -48,11 +49,23 @@
             </article>
         </section>
 
+        <section class="price-grid">
+            {% for fuel in fuel_cards %}
+            <article class="price-card">
+                <span>Gasolina {{ fuel.tipo }}</span>
+                <strong>{{ fuel.precio_galon }}</strong>
+                <p>Precio por galon</p>
+                <small>Fuente: <a href="{{ fuel.fuente }}" target="_blank" rel="noreferrer">{{ fuel.fuente }}</a></small>
+                <small>Actualizado en: {{ fuel.actualizado_en }}</small>
+            </article>
+            {% endfor %}
+        </section>
+
         <main class="content-grid">
             <section class="panel form-panel">
                 <div class="panel-heading">
                     <h2>Registrar llegada</h2>
-                    <p>Cada registro crea el vehículo o actualiza sus datos y lo agrega a la cola.</p>
+                    <p>Los valores del tanque y la solicitud se manejan en galones.</p>
                 </div>
 
                 <form action="{{ url_for('register_vehicle') }}" method="post" class="vehicle-form">
@@ -61,31 +74,39 @@
                         <input type="text" name="placa" placeholder="ABC123" required>
                     </label>
                     <label>
-                        Capacidad del tanque (L)
-                        <input type="number" name="capacidad_tanque" min="1" step="0.1" required>
+                        Tipo de combustible
+                        <select name="tipo_combustible" required>
+                            <option value="Corriente">Corriente</option>
+                            <option value="Extra">Extra</option>
+                        </select>
                     </label>
                     <label>
-                        Nivel actual (L)
-                        <input type="number" name="nivel_actual" min="0" step="0.1" required>
+                        Capacidad del tanque (gal)
+                        <input type="number" name="capacidad_tanque" min="1" step="0.01" required>
                     </label>
                     <label>
-                        Cantidad a llenar (L)
-                        <input type="number" name="cantidad_a_llenar" min="0.1" step="0.1" required>
+                        Nivel actual (gal)
+                        <input type="number" name="nivel_actual" min="0" step="0.01" required>
+                    </label>
+                    <label>
+                        Cantidad a tanquear (gal)
+                        <input type="number" name="cantidad_a_llenar" min="0.01" step="0.01" required>
                     </label>
                     <button type="submit">Agregar a la cola</button>
                 </form>
 
                 <div class="formula-box">
-                    <h3>Fórmula aplicada</h3>
-                    <p>Tiempo de servicio = litros solicitados / velocidad de la bomba</p>
-                    <p>Configuración inicial: 0.5 litros por segundo = 1 litro cada 2 segundos</p>
+                    <h3>Calculos del sistema</h3>
+                    <p>Tiempo de servicio = (galones solicitados x 3.78541) / velocidad de la bomba</p>
+                    <p>Costo total = galones solicitados x precio actual por galon</p>
+                    <p>La velocidad configurada sigue siendo 0.5 litros por segundo.</p>
                 </div>
             </section>
 
             <section class="panel">
                 <div class="panel-heading">
                     <h2>Estado de las bombas</h2>
-                    <p>Vista actual de servidores del sistema.</p>
+                    <p>Cada bomba opera como un servidor del sistema.</p>
                 </div>
                 <div class="table-wrap">
                     <table>
@@ -93,8 +114,9 @@
                             <tr>
                                 <th>Bomba</th>
                                 <th>Estado</th>
-                                <th>Velocidad</th>
-                                <th>Vehículo</th>
+                                <th>Capacidad</th>
+                                <th>Vehiculo</th>
+                                <th>Combustible</th>
                                 <th>Tiempo restante</th>
                             </tr>
                         </thead>
@@ -103,8 +125,9 @@
                             <tr>
                                 <td>#{{ bomba.id_bomba }}</td>
                                 <td>{{ bomba.estado }}</td>
-                                <td>{{ bomba.segundos_por_litro }} s/L</td>
+                                <td>{{ bomba.galones_por_minuto }} gal/min</td>
                                 <td>{{ bomba.placa or '-' }}</td>
+                                <td>{{ bomba.combustible or '-' }}</td>
                                 <td>{{ bomba.tiempo_restante }}</td>
                             </tr>
                             {% endfor %}
@@ -115,8 +138,8 @@
 
             <section class="panel full-width">
                 <div class="panel-heading">
-                    <h2>Cola en tiempo real</h2>
-                    <p>Los datos se refrescan automáticamente para reflejar cambios de estado.</p>
+                    <h2>Cola del sistema</h2>
+                    <p>Se muestra el combustible seleccionado, los galones solicitados y el costo estimado.</p>
                 </div>
                 <div class="table-wrap">
                     <table>
@@ -124,10 +147,13 @@
                             <tr>
                                 <th>Turno</th>
                                 <th>Placa</th>
+                                <th>Combustible</th>
                                 <th>Llegada</th>
-                                <th>Litros solicitados</th>
+                                <th>Galones</th>
+                                <th>Precio/galon</th>
+                                <th>Costo estimado</th>
                                 <th>Estado</th>
-                                <th>Espera acumulada</th>
+                                <th>Espera</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -135,14 +161,17 @@
                             <tr>
                                 <td>{{ item.id_cola }}</td>
                                 <td>{{ item.placa }}</td>
+                                <td>{{ item.tipo_combustible }}</td>
                                 <td>{{ item.hora_llegada }}</td>
-                                <td>{{ item.cantidad_solicitada }}</td>
+                                <td>{{ item.galones_solicitados }}</td>
+                                <td>{{ item.precio_galon_label }}</td>
+                                <td>{{ item.costo_estimado_label }}</td>
                                 <td>{{ item.estado }}</td>
                                 <td>{{ item.espera_actual }}</td>
                             </tr>
                             {% else %}
                             <tr>
-                                <td colspan="6">No hay vehículos registrados.</td>
+                                <td colspan="9">No hay vehiculos registrados.</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -153,7 +182,7 @@
             <section class="panel full-width">
                 <div class="panel-heading">
                     <h2>Historial de transacciones</h2>
-                    <p>Registro de abastecimiento con tiempos calculados por el sistema.</p>
+                    <p>Cada tanqueada queda registrada con costo, tipo de gasolina y fuente del precio.</p>
                 </div>
                 <div class="table-wrap">
                     <table>
@@ -162,7 +191,10 @@
                                 <th>ID</th>
                                 <th>Placa</th>
                                 <th>Bomba</th>
-                                <th>Litros</th>
+                                <th>Combustible</th>
+                                <th>Galones</th>
+                                <th>Precio/galon</th>
+                                <th>Total</th>
                                 <th>Inicio</th>
                                 <th>Fin</th>
                                 <th>Espera</th>
@@ -175,7 +207,10 @@
                                 <td>{{ transaccion.id_transaccion }}</td>
                                 <td>{{ transaccion.placa }}</td>
                                 <td>#{{ transaccion.id_bomba }}</td>
-                                <td>{{ transaccion.litros_suministrados }}</td>
+                                <td>{{ transaccion.combustible }}</td>
+                                <td>{{ transaccion.galones_suministrados|round(2) }}</td>
+                                <td>{{ transaccion.precio_galon_label }}</td>
+                                <td>{{ transaccion.costo_total_label }}</td>
                                 <td>{{ transaccion.hora_inicio }}</td>
                                 <td>{{ transaccion.hora_fin }}</td>
                                 <td>{{ transaccion.tiempo_espera_label }}</td>
@@ -183,7 +218,7 @@
                             </tr>
                             {% else %}
                             <tr>
-                                <td colspan="8">No se han generado transacciones todavía.</td>
+                                <td colspan="11">No se han generado transacciones todavia.</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -192,6 +227,5 @@
             </section>
         </main>
     </div>
-
 </body>
 </html>

@@ -3,12 +3,14 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta
 
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 from database import get_connection, init_db, reset_db
+from fuel_prices import get_fuel_prices
 
 
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+LITERS_PER_GALLON = 3.78541
 
 app = Flask(__name__)
 init_db()
@@ -31,13 +33,17 @@ def seconds_to_label(seconds: int) -> str:
     return f"{minutes:02d}:{remaining_seconds:02d}"
 
 
+def format_money(value: float) -> str:
+    return f"${value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def sync_system_state() -> None:
     current_time = now_local()
 
     with get_connection() as connection:
         active_transactions = connection.execute(
             """
-            SELECT t.id_transaccion, t.id_vehiculo, t.id_bomba, t.hora_fin
+            SELECT t.id_transaccion, t.id_vehiculo, t.id_bomba, t.hora_fin, t.galones_suministrados
             FROM transacciones t
             INNER JOIN cola c ON c.id_vehiculo = t.id_vehiculo
             WHERE c.estado = 'en servicio'
@@ -47,14 +53,6 @@ def sync_system_state() -> None:
         for transaction in active_transactions:
             end_time = parse_dt(transaction["hora_fin"])
             if end_time <= current_time:
-                supplied_liters = connection.execute(
-                    """
-                    SELECT litros_suministrados
-                    FROM transacciones
-                    WHERE id_transaccion = ?
-                    """,
-                    (transaction["id_transaccion"],),
-                ).fetchone()["litros_suministrados"]
                 connection.execute(
                     """
                     UPDATE cola
@@ -69,7 +67,7 @@ def sync_system_state() -> None:
                     SET nivel_actual = MIN(capacidad_tanque, nivel_actual + ?)
                     WHERE id_vehiculo = ?
                     """,
-                    (supplied_liters, transaction["id_vehiculo"]),
+                    (transaction["galones_suministrados"], transaction["id_vehiculo"]),
                 )
                 connection.execute(
                     """
@@ -82,7 +80,14 @@ def sync_system_state() -> None:
 
         waiting_queue = connection.execute(
             """
-            SELECT c.id_cola, c.id_vehiculo, c.hora_llegada, c.cantidad_solicitada
+            SELECT
+                c.id_cola,
+                c.id_vehiculo,
+                c.hora_llegada,
+                c.galones_solicitados,
+                c.tipo_combustible,
+                c.precio_galon,
+                c.costo_estimado
             FROM cola c
             WHERE c.estado = 'esperando'
             ORDER BY c.hora_llegada ASC, c.id_cola ASC
@@ -98,17 +103,21 @@ def sync_system_state() -> None:
             """
         ).fetchall()
 
+        prices = get_fuel_prices()
+
         for queue_item, pump in zip(waiting_queue, available_pumps):
             start_time = now_local()
             arrival_time = parse_dt(queue_item["hora_llegada"])
             wait_seconds = int((start_time - arrival_time).total_seconds())
+            gallons = queue_item["galones_solicitados"]
+            liters = gallons * LITERS_PER_GALLON
             service_seconds = max(
                 1,
-                int(
-                round(queue_item["cantidad_solicitada"] / pump["velocidad_litro_segundo"])
-                ),
+                int(round(liters / pump["velocidad_litro_segundo"])),
             )
             end_time = start_time + timedelta(seconds=service_seconds)
+            fuel_type = queue_item["tipo_combustible"]
+            price_info = prices[fuel_type]
 
             connection.execute(
                 """
@@ -118,26 +127,45 @@ def sync_system_state() -> None:
                     litros_suministrados,
                     hora_inicio,
                     hora_fin,
-                    tiempo_espera
+                    tiempo_espera,
+                    combustible,
+                    galones_suministrados,
+                    precio_galon,
+                    costo_total,
+                    fuente_precio,
+                    fecha_precio
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     queue_item["id_vehiculo"],
                     pump["id_bomba"],
-                    queue_item["cantidad_solicitada"],
+                    liters,
                     format_dt(start_time),
                     format_dt(end_time),
                     max(0, wait_seconds),
+                    fuel_type,
+                    gallons,
+                    price_info["precio_galon"],
+                    gallons * price_info["precio_galon"],
+                    price_info["fuente"],
+                    price_info["actualizado_en"],
                 ),
             )
             connection.execute(
                 """
                 UPDATE cola
-                SET estado = 'en servicio'
+                SET
+                    estado = 'en servicio',
+                    precio_galon = ?,
+                    costo_estimado = ?
                 WHERE id_cola = ?
                 """,
-                (queue_item["id_cola"],),
+                (
+                    price_info["precio_galon"],
+                    gallons * price_info["precio_galon"],
+                    queue_item["id_cola"],
+                ),
             )
             connection.execute(
                 """
@@ -152,6 +180,7 @@ def sync_system_state() -> None:
 def build_dashboard_context() -> dict:
     sync_system_state()
     current_time = now_local()
+    prices = get_fuel_prices()
 
     with get_connection() as connection:
         summary = connection.execute(
@@ -170,7 +199,10 @@ def build_dashboard_context() -> dict:
                 c.id_cola,
                 v.placa,
                 c.hora_llegada,
-                c.cantidad_solicitada,
+                c.galones_solicitados,
+                c.tipo_combustible,
+                c.precio_galon,
+                c.costo_estimado,
                 c.estado
             FROM cola c
             INNER JOIN vehiculos v ON v.id_vehiculo = c.id_vehiculo
@@ -192,7 +224,8 @@ def build_dashboard_context() -> dict:
                 b.velocidad_litro_segundo,
                 v.placa,
                 t.hora_inicio,
-                t.hora_fin
+                t.hora_fin,
+                t.combustible
             FROM bombas b
             LEFT JOIN transacciones t
                 ON t.id_bomba = b.id_bomba
@@ -214,10 +247,15 @@ def build_dashboard_context() -> dict:
                 t.id_transaccion,
                 v.placa,
                 t.id_bomba,
-                t.litros_suministrados,
+                t.galones_suministrados,
+                t.combustible,
+                t.precio_galon,
+                t.costo_total,
                 t.hora_inicio,
                 t.hora_fin,
-                t.tiempo_espera
+                t.tiempo_espera,
+                t.fuente_precio,
+                t.fecha_precio
             FROM transacciones t
             INNER JOIN vehiculos v ON v.id_vehiculo = t.id_vehiculo
             ORDER BY t.id_transaccion DESC
@@ -232,6 +270,8 @@ def build_dashboard_context() -> dict:
             {
                 **dict(item),
                 "espera_actual": seconds_to_label(elapsed),
+                "precio_galon_label": format_money(item["precio_galon"]) if item["precio_galon"] else "-",
+                "costo_estimado_label": format_money(item["costo_estimado"]) if item["costo_estimado"] else "-",
             }
         )
 
@@ -246,7 +286,7 @@ def build_dashboard_context() -> dict:
             {
                 **dict(pump),
                 "tiempo_restante": remaining,
-                "segundos_por_litro": round(1 / pump["velocidad_litro_segundo"], 2),
+                "galones_por_minuto": round((pump["velocidad_litro_segundo"] * 60) / LITERS_PER_GALLON, 2),
             }
         )
 
@@ -260,6 +300,20 @@ def build_dashboard_context() -> dict:
                 **dict(item),
                 "tiempo_servicio": seconds_to_label(duration),
                 "tiempo_espera_label": seconds_to_label(item["tiempo_espera"]),
+                "precio_galon_label": format_money(item["precio_galon"]),
+                "costo_total_label": format_money(item["costo_total"]),
+            }
+        )
+
+    fuel_cards = []
+    for fuel_type in ("Corriente", "Extra"):
+        price_info = prices[fuel_type]
+        fuel_cards.append(
+            {
+                "tipo": fuel_type,
+                "precio_galon": format_money(price_info["precio_galon"]),
+                "fuente": price_info["fuente"],
+                "actualizado_en": price_info["actualizado_en"],
             }
         )
 
@@ -268,6 +322,7 @@ def build_dashboard_context() -> dict:
         "queue": queue_rows,
         "pumps": pump_rows,
         "transactions": transaction_rows,
+        "fuel_cards": fuel_cards,
         "current_time": format_dt(current_time),
     }
 
@@ -277,16 +332,30 @@ def index():
     return render_template("index.html", **build_dashboard_context())
 
 
+@app.route("/api/precios-combustible", methods=["GET"])
+def fuel_prices_api():
+    return jsonify(get_fuel_prices())
+
+
 @app.route("/vehiculos", methods=["POST"])
 def register_vehicle():
     plate = request.form["placa"].strip().upper()
     capacity = float(request.form["capacidad_tanque"])
     current_level = float(request.form["nivel_actual"])
     requested_amount = float(request.form["cantidad_a_llenar"])
+    fuel_type = request.form["tipo_combustible"]
 
     available_space = capacity - current_level
-    if current_level > capacity or requested_amount <= 0 or requested_amount > available_space:
+    if (
+        current_level > capacity
+        or requested_amount <= 0
+        or requested_amount > available_space
+        or fuel_type not in {"Corriente", "Extra"}
+    ):
         return redirect(url_for("index"))
+
+    prices = get_fuel_prices()
+    fuel_price = prices[fuel_type]["precio_galon"]
 
     with get_connection() as connection:
         vehicle = connection.execute(
@@ -320,10 +389,27 @@ def register_vehicle():
 
         connection.execute(
             """
-            INSERT INTO cola (id_vehiculo, hora_llegada, cantidad_solicitada, estado)
-            VALUES (?, ?, ?, 'esperando')
+            INSERT INTO cola (
+                id_vehiculo,
+                hora_llegada,
+                cantidad_solicitada,
+                galones_solicitados,
+                tipo_combustible,
+                precio_galon,
+                costo_estimado,
+                estado
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'esperando')
             """,
-            (vehicle_id, format_dt(now_local()), requested_amount),
+            (
+                vehicle_id,
+                format_dt(now_local()),
+                requested_amount,
+                requested_amount,
+                fuel_type,
+                fuel_price,
+                requested_amount * fuel_price,
+            ),
         )
 
     sync_system_state()

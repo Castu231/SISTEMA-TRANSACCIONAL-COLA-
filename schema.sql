@@ -12,6 +12,10 @@ CREATE TABLE IF NOT EXISTS cola (
     id_vehiculo INTEGER NOT NULL,
     hora_llegada TEXT NOT NULL,
     cantidad_solicitada REAL NOT NULL,
+    galones_solicitados REAL NOT NULL,
+    tipo_combustible TEXT NOT NULL,
+    precio_galon REAL NOT NULL,
+    costo_estimado REAL NOT NULL,
     estado TEXT NOT NULL CHECK (estado IN ('esperando', 'en servicio', 'finalizado')),
     FOREIGN KEY (id_vehiculo) REFERENCES vehiculos(id_vehiculo)
 );
@@ -27,11 +31,24 @@ CREATE TABLE IF NOT EXISTS transacciones (
     id_vehiculo INTEGER NOT NULL,
     id_bomba INTEGER NOT NULL,
     litros_suministrados REAL NOT NULL,
+    galones_suministrados REAL NOT NULL,
+    combustible TEXT NOT NULL,
+    precio_galon REAL NOT NULL,
+    costo_total REAL NOT NULL,
+    fuente_precio TEXT NOT NULL,
+    fecha_precio TEXT NOT NULL,
     hora_inicio TEXT NOT NULL,
     hora_fin TEXT NOT NULL,
     tiempo_espera INTEGER NOT NULL,
     FOREIGN KEY (id_vehiculo) REFERENCES vehiculos(id_vehiculo),
     FOREIGN KEY (id_bomba) REFERENCES bombas(id_bomba)
+);
+
+CREATE TABLE IF NOT EXISTS precios_combustible (
+    tipo_combustible TEXT PRIMARY KEY,
+    precio_galon REAL NOT NULL,
+    fuente TEXT NOT NULL,
+    actualizado_en TEXT NOT NULL
 );
 
 INSERT INTO bombas (estado, velocidad_litro_segundo)
