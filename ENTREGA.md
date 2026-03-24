@@ -52,19 +52,3 @@ Ejemplo del sistema:
 37.8541 / 0.5 = 75.7 segundos
 ```
 
-## Estructura del proyecto
-
-- `app.py`: controlador principal y rutas web.
-- `database.py`: conexion, creacion e inicializacion de la base de datos.
-- `schema.sql`: script del modelo de base de datos.
-- `fuel_prices.py`: servicio de consulta y cache de precios.
-- `templates/index.html`: interfaz HTML.
-- `static/styles.css`: estilos visuales.
-- `README.md`: instrucciones de uso.
-
-## Prueba basica realizada
-
-- Compilacion de Python sin errores.
-- Carga correcta de la pagina principal.
-- Registro exitoso de un vehiculo en la cola.
-- Generacion del historial de transacciones en la interfaz.
