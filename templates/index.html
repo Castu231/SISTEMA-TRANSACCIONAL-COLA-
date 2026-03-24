@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema Transaccional de Colas</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="page-shell">
+        <header class="hero">
+            <div>
+                <p class="eyebrow">Simulación de estación de servicio</p>
+                <h1>Sistema transaccional de colas para tanqueada de automóviles</h1>
+                <p class="subtitle">
+                    Controla la llegada de vehículos, su paso por la cola, la asignación a bombas
+                    y el registro de cada transacción con tiempos de espera y servicio.
+                </p>
+            </div>
+            <div class="hero-meta">
+                <span>Hora del sistema</span>
+                <strong>{{ current_time }}</strong>
+                <form action="{{ url_for('index') }}" method="get">
+                    <button type="submit">Actualizar vista</button>
+                </form>
+                <form action="{{ url_for('restart') }}" method="post">
+                    <button type="submit" class="secondary">Reiniciar simulación</button>
+                </form>
+            </div>
+        </header>
+
+        <section class="stats-grid">
+            <article class="stat-card">
+                <span>En espera</span>
+                <strong>{{ summary.esperando }}</strong>
+            </article>
+            <article class="stat-card">
+                <span>En servicio</span>
+                <strong>{{ summary.en_servicio }}</strong>
+            </article>
+            <article class="stat-card">
+                <span>Finalizados</span>
+                <strong>{{ summary.finalizado }}</strong>
+            </article>
+            <article class="stat-card">
+                <span>Bombas libres</span>
+                <strong>{{ summary.bombas_libres }}</strong>
+            </article>
+        </section>
+
+        <main class="content-grid">
+            <section class="panel form-panel">
+                <div class="panel-heading">
+                    <h2>Registrar llegada</h2>
+                    <p>Cada registro crea el vehículo o actualiza sus datos y lo agrega a la cola.</p>
+                </div>
+
+                <form action="{{ url_for('register_vehicle') }}" method="post" class="vehicle-form">
+                    <label>
+                        Placa
+                        <input type="text" name="placa" placeholder="ABC123" required>
+                    </label>
+                    <label>
+                        Capacidad del tanque (L)
+                        <input type="number" name="capacidad_tanque" min="1" step="0.1" required>
+                    </label>
+                    <label>
+                        Nivel actual (L)
+                        <input type="number" name="nivel_actual" min="0" step="0.1" required>
+                    </label>
+                    <label>
+                        Cantidad a llenar (L)
+                        <input type="number" name="cantidad_a_llenar" min="0.1" step="0.1" required>
+                    </label>
+                    <button type="submit">Agregar a la cola</button>
+                </form>
+
+                <div class="formula-box">
+                    <h3>Fórmula aplicada</h3>
+                    <p>Tiempo de servicio = litros solicitados / velocidad de la bomba</p>
+                    <p>Configuración inicial: 0.5 litros por segundo = 1 litro cada 2 segundos</p>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-heading">
+                    <h2>Estado de las bombas</h2>
+                    <p>Vista actual de servidores del sistema.</p>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Bomba</th>
+                                <th>Estado</th>
+                                <th>Velocidad</th>
+                                <th>Vehículo</th>
+                                <th>Tiempo restante</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for bomba in pumps %}
+                            <tr>
+                                <td>#{{ bomba.id_bomba }}</td>
+                                <td>{{ bomba.estado }}</td>
+                                <td>{{ bomba.segundos_por_litro }} s/L</td>
+                                <td>{{ bomba.placa or '-' }}</td>
+                                <td>{{ bomba.tiempo_restante }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="panel full-width">
+                <div class="panel-heading">
+                    <h2>Cola en tiempo real</h2>
+                    <p>Los datos se refrescan automáticamente para reflejar cambios de estado.</p>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Turno</th>
+                                <th>Placa</th>
+                                <th>Llegada</th>
+                                <th>Litros solicitados</th>
+                                <th>Estado</th>
+                                <th>Espera acumulada</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in queue %}
+                            <tr>
+                                <td>{{ item.id_cola }}</td>
+                                <td>{{ item.placa }}</td>
+                                <td>{{ item.hora_llegada }}</td>
+                                <td>{{ item.cantidad_solicitada }}</td>
+                                <td>{{ item.estado }}</td>
+                                <td>{{ item.espera_actual }}</td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="6">No hay vehículos registrados.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="panel full-width">
+                <div class="panel-heading">
+                    <h2>Historial de transacciones</h2>
+                    <p>Registro de abastecimiento con tiempos calculados por el sistema.</p>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Placa</th>
+                                <th>Bomba</th>
+                                <th>Litros</th>
+                                <th>Inicio</th>
+                                <th>Fin</th>
+                                <th>Espera</th>
+                                <th>Servicio</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for transaccion in transactions %}
+                            <tr>
+                                <td>{{ transaccion.id_transaccion }}</td>
+                                <td>{{ transaccion.placa }}</td>
+                                <td>#{{ transaccion.id_bomba }}</td>
+                                <td>{{ transaccion.litros_suministrados }}</td>
+                                <td>{{ transaccion.hora_inicio }}</td>
+                                <td>{{ transaccion.hora_fin }}</td>
+                                <td>{{ transaccion.tiempo_espera_label }}</td>
+                                <td>{{ transaccion.tiempo_servicio }}</td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="8">No se han generado transacciones todavía.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+</body>
+</html>
